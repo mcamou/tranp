@@ -1,11 +1,9 @@
-use thiserror;
-
 use crate::amount::Amount;
 
 pub type ClientId = u16;
 pub type TxnId = u32;
 
-#[derive(Debug, PartialEq, Hash)]
+#[derive(Clone, Debug, PartialEq, Hash)]
 pub enum Txn {
     Deposit {
         client: ClientId,
@@ -31,19 +29,29 @@ pub enum Txn {
     },
 }
 
+#[derive(Clone, Debug, PartialEq)]
 pub struct AccountData {
     pub client: ClientId,
     pub available: Amount,
     pub held: Amount,
 }
 
+#[derive(Clone, Debug, PartialEq)]
 pub enum Account {
     Locked(AccountData),
     Unlocked(AccountData),
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, PartialEq, thiserror::Error)]
 pub enum Error {
     #[error("Error in input data: `{0}`.")]
     Input(String),
+    #[error("Insufficient funds ({1}) referencing transaction {1}")]
+    InsufficientFunds(TxnId, String),
+    #[error("Invalid Transaction {0}: `{1}`")]
+    InvalidTransaction(TxnId, String),
+    #[error("Transaction {0}: Nonexistent account: {1}")]
+    NonexistentAccount(TxnId, ClientId),
+    #[error("Transaction {0}: Locked account: {1}")]
+    LockedAccount(TxnId, ClientId),
 }
