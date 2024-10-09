@@ -91,32 +91,6 @@ impl From<&Account> for Output {
     }
 }
 
-pub fn load(path: String) -> (Vec<Txn>, Vec<Error>) {
-    let mut txns: Vec<Txn> = Vec::new();
-    let mut errs: Vec<Error> = Vec::new();
-
-    match csv::ReaderBuilder::new()
-        .flexible(true)
-        .trim(csv::Trim::All)
-        .from_path(path.clone())
-    {
-        Ok(mut rdr) => {
-            let input = rdr.deserialize::<Input>();
-            for inp in input {
-                match inp {
-                    Ok(i) => match i.try_into() {
-                        Ok(txn) => txns.push(txn),
-                        Err(e) => errs.push(Error::Deserialization(path.clone(), e.to_string())),
-                    },
-                    Err(e) => errs.push(Error::Deserialization(path.clone(), e.to_string())),
-                }
-            }
-        }
-        Err(e) => errs.push(Error::Deserialization(path, e.to_string())),
-    }
-    (txns, errs)
-}
-
 pub fn save<'a, I: Iterator<Item = &'a Account>>(
     writer: impl Write,
     accts: I,

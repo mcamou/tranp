@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use crate::csv_utils::Input;
 use crate::types::Account::{Locked, Unlocked};
 use crate::types::{Account, AccountData, ClientId, Error, Txn, TxnId};
 
@@ -48,7 +49,7 @@ impl Processor {
                     Ok(())
                 }
 
-                Some(Unlocked(..)) => Err(Error::InsufficientFunds(*tx, "withdrawal".to_string())),
+                Some(Unlocked(..)) => Err(Error::InsufficientFunds(*tx)),
 
                 Some(Locked(..)) => Err(Error::LockedAccount(*tx, *client)),
 
@@ -60,15 +61,11 @@ impl Processor {
                     Some(
                         t @ Txn::Deposit { tx, amount, .. }
                         | t @ Txn::Withdrawal { tx, amount, .. },
-                    ) if *amount <= acct.available => {
+                    ) => {
                         acct.available = acct.available - (*amount);
                         acct.held = acct.held + (*amount);
                         self.disputes.insert((*tx, *client), (*t).clone());
                         Ok(())
-                    }
-
-                    Some(Txn::Deposit { tx, .. } | Txn::Withdrawal { tx, .. }) => {
-                        Err(Error::InsufficientFunds(*tx, "dispute".to_string()))
                     }
 
                     _ => Err(Error::InvalidTransaction(
@@ -84,17 +81,11 @@ impl Processor {
 
             Txn::Resolve { client, tx } => match self.accounts.get_mut(client) {
                 Some(Unlocked(acct)) => match self.disputes.get(&(*tx, *client)) {
-                    Some(Txn::Deposit { tx, amount, .. } | Txn::Withdrawal { tx, amount, .. })
-                        if *amount <= acct.held =>
-                    {
+                    Some(Txn::Deposit { tx, amount, .. } | Txn::Withdrawal { tx, amount, .. }) => {
                         acct.available = acct.available + (*amount);
                         acct.held = acct.held - (*amount);
                         self.disputes.remove(&(*tx, *client));
                         Ok(())
-                    }
-
-                    Some(Txn::Deposit { tx, .. } | Txn::Withdrawal { tx, .. }) => {
-                        Err(Error::InsufficientFunds(*tx, "resolve".to_string()))
                     }
 
                     _ => Err(Error::InvalidTransaction(
@@ -110,9 +101,7 @@ impl Processor {
 
             Txn::Chargeback { client, tx } => match self.accounts.get_mut(client) {
                 Some(Unlocked(acct)) => match self.history.get(&(*tx, *client)) {
-                    Some(Txn::Deposit { tx, amount, .. } | Txn::Withdrawal { tx, amount, .. })
-                        if *amount <= acct.held =>
-                    {
+                    Some(Txn::Deposit { tx, amount, .. } | Txn::Withdrawal { tx, amount, .. }) => {
                         let ac = Locked(AccountData {
                             client: *client,
                             available: acct.available,
@@ -121,10 +110,6 @@ impl Processor {
                         self.accounts.insert(*client, ac);
                         self.disputes.remove(&(*tx, *client));
                         Ok(())
-                    }
-
-                    Some(Txn::Deposit { tx, .. } | Txn::Withdrawal { tx, .. }) => {
-                        Err(Error::InsufficientFunds(*tx, "chargeback".to_string()))
                     }
 
                     _ => Err(Error::InvalidTransaction(
@@ -142,6 +127,39 @@ impl Processor {
 
     pub fn get_accounts(&self) -> impl Iterator<Item = &Account> {
         self.accounts.values()
+    }
+
+    pub fn process_csv(&mut self, path: String) -> Vec<Error> {
+        let mut errs = Vec::new();
+
+        match csv::ReaderBuilder::new()
+            .flexible(true)
+            .trim(csv::Trim::All)
+            .from_path(path.clone())
+        {
+            Ok(mut rdr) => {
+                let input = rdr.deserialize::<Input>();
+                for inp in input {
+                    match inp {
+                        Ok(i) => match i.try_into() {
+                            Ok(txn) => {
+                                if let Err(e) = self.process_txn(&txn) {
+                                    errs.push(e);
+                                }
+                            }
+
+                            Err(e) => {
+                                errs.push(Error::Deserialization(path.clone(), e.to_string()))
+                            }
+                        },
+                        Err(e) => errs.push(Error::Deserialization(path.clone(), e.to_string())),
+                    }
+                }
+            }
+            Err(e) => errs.push(Error::Deserialization(path, e.to_string())),
+        }
+
+        errs
     }
 }
 
@@ -249,6 +267,35 @@ mod tests {
             let acct = p.accounts.get(&42).cloned().expect("Account not found");
             assert_eq!(acct, expected_acct);
         }
+    }
+
+    #[test]
+    fn withdrawal_overdraft() {
+        let mut p = Processor::new();
+
+        let txn = Txn::Deposit {
+            client: 42,
+            tx: 4242,
+            amount: 42.into(),
+        };
+        let _ = p.process_txn(&txn);
+
+        let txn = Txn::Withdrawal {
+            client: 42,
+            tx: 4242,
+            amount: 4200.into(),
+        };
+        let actual = p.process_txn(&txn);
+        let expected = Err(Error::InsufficientFunds(4242));
+        assert_eq!(actual, expected);
+
+        let expected = Unlocked(AccountData {
+            client: 42,
+            available: 42.into(),
+            held: 0.into(),
+        });
+        let actual = p.accounts.get(&42).cloned().expect("Account not found");
+        assert_eq!(actual, expected);
     }
 
     #[test]

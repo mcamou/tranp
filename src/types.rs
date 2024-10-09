@@ -29,14 +29,14 @@ pub enum Txn {
     },
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, PartialOrd, Eq, Ord)]
 pub struct AccountData {
     pub client: ClientId,
     pub available: Amount,
     pub held: Amount,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, PartialOrd, Eq, Ord)]
 pub enum Account {
     Locked(AccountData),
     Unlocked(AccountData),
@@ -50,8 +50,8 @@ pub enum Error {
     Serialization(String),
     #[error("Error in input data: `{0}`.")]
     Input(String),
-    #[error("Insufficient funds ({1}) referencing transaction {0}")]
-    InsufficientFunds(TxnId, String),
+    #[error("Transaction {0}: Insufficient funds")]
+    InsufficientFunds(TxnId),
     #[error("Invalid Transaction {0}: `{1}`")]
     InvalidTransaction(TxnId, String),
     #[error("Transaction {0}: Nonexistent account: {1}")]

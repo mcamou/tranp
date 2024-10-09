@@ -10,8 +10,8 @@ const DECIMALS: usize = 4;
 
 // I tried using the primitive_fixed_point_decimal and the fixed crates, but they both had problems with
 // serde+csv. This is a very-poor-man's version of a fixed decimal.
-#[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Hash)]
-pub struct Amount(u64);
+#[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Ord, Hash, Eq)]
+pub struct Amount(i64);
 
 impl Display for Amount {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -20,13 +20,13 @@ impl Display for Amount {
     }
 }
 
-impl From<u64> for Amount {
-    fn from(value: u64) -> Self {
+impl From<i64> for Amount {
+    fn from(value: i64) -> Self {
         Amount(value)
     }
 }
 
-impl From<Amount> for u64 {
+impl From<Amount> for i64 {
     fn from(val: Amount) -> Self {
         val.0
     }
@@ -96,25 +96,30 @@ mod tests {
 
     #[test]
     fn test_unmarshal_amount() {
-        let sut = "1234.5678".to_owned();
+        let sut = "1234.5678".to_string();
         let actual: Amount = sut.try_into().expect("Error unmarshalling 1234.5678");
 
         assert_eq!(actual, Amount(12345678));
 
-        let sut = "1234".to_owned();
+        let sut = "1234".to_string();
         let actual: Amount = sut.try_into().expect("Error unmarshalling 1234");
 
         assert_eq!(actual, Amount(12340000));
 
-        let sut = "1234.56".to_owned();
+        let sut = "1234.56".to_string();
         let actual: Amount = sut.try_into().expect("Error unmarshalling 1234.56");
 
         assert_eq!(actual, Amount(12345600));
 
-        let sut = "1234.5678901".to_owned();
+        let sut = "1234.5678901".to_string();
         let actual: Amount = sut.try_into().expect("Error unmarshalling 1234.5678901");
 
         assert_eq!(actual, Amount(12345678));
+
+        let sut = "-1234.5678".to_string();
+        let actual: Amount = sut.try_into().expect("Error unmarshalling -1234.5678");
+
+        assert_eq!(actual, Amount(-12345678));
     }
 
     #[test]
@@ -124,5 +129,8 @@ mod tests {
 
         let actual = Amount(234500) - Amount(123400);
         assert_eq!(actual, Amount(111100));
+
+        let actual = Amount(1234) - Amount(4321);
+        assert_eq!(actual, Amount(-3087))
     }
 }
