@@ -105,6 +105,40 @@ pub fn save<'a, I: Iterator<Item = &'a Account>>(
     Ok(())
 }
 
+pub fn process_csv<F>(path: String, mut f: F) -> Vec<Error>
+where F: FnMut(&Txn) -> Result<(), Error> {
+    let mut errs = Vec::new();
+
+    match csv::ReaderBuilder::new()
+        .flexible(true)
+        .trim(csv::Trim::All)
+        .from_path(path.clone())
+    {
+        Ok(mut rdr) => {
+            let input = rdr.deserialize::<Input>();
+            for inp in input {
+                match inp {
+                    Ok(i) => match i.try_into() {
+                        Ok(txn) => {
+                            if let Err(e) = f(&txn) {
+                                errs.push(e);
+                            }
+                        }
+
+                        Err(e) => {
+                            errs.push(Error::Deserialization(path.clone(), e.to_string()))
+                        }
+                    },
+                    Err(e) => errs.push(Error::Deserialization(path.clone(), e.to_string())),
+                }
+            }
+        }
+        Err(e) => errs.push(Error::Deserialization(path, e.to_string())),
+    }
+
+    errs
+}
+
 #[cfg(test)]
 mod tests {
     use std::io::BufWriter;

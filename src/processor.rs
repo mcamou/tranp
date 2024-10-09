@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use crate::csv_utils::Input;
 use crate::types::Account::{Locked, Unlocked};
 use crate::types::{Account, AccountData, ClientId, Error, Txn, TxnId};
 
@@ -127,39 +126,6 @@ impl Processor {
 
     pub fn get_accounts(&self) -> impl Iterator<Item = &Account> {
         self.accounts.values()
-    }
-
-    pub fn process_csv(&mut self, path: String) -> Vec<Error> {
-        let mut errs = Vec::new();
-
-        match csv::ReaderBuilder::new()
-            .flexible(true)
-            .trim(csv::Trim::All)
-            .from_path(path.clone())
-        {
-            Ok(mut rdr) => {
-                let input = rdr.deserialize::<Input>();
-                for inp in input {
-                    match inp {
-                        Ok(i) => match i.try_into() {
-                            Ok(txn) => {
-                                if let Err(e) = self.process_txn(&txn) {
-                                    errs.push(e);
-                                }
-                            }
-
-                            Err(e) => {
-                                errs.push(Error::Deserialization(path.clone(), e.to_string()))
-                            }
-                        },
-                        Err(e) => errs.push(Error::Deserialization(path.clone(), e.to_string())),
-                    }
-                }
-            }
-            Err(e) => errs.push(Error::Deserialization(path, e.to_string())),
-        }
-
-        errs
     }
 }
 

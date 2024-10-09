@@ -2,6 +2,7 @@ use std::io::stdout;
 
 use itertools::sorted;
 use log::{error, warn};
+use crate::csv_utils::process_csv;
 
 mod amount;
 mod csv_utils;
@@ -21,7 +22,7 @@ fn main() {
 
     let mut p = processor::Processor::new();
 
-    for e in p.process_csv(path.to_string()) {
+    for e in process_csv(path.to_string(), |txn| { p.process_txn(txn) }) {
         warn!("{}", e);
     }
 
