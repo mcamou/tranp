@@ -4,7 +4,7 @@ use crate::types::Account::{Locked, Unlocked};
 use crate::types::{Account, AccountData, ClientId, Error, Txn, TxnId};
 
 #[derive(Debug)]
-struct Processor {
+pub struct Processor {
     accounts: HashMap<ClientId, Account>,
     history: HashMap<(TxnId, ClientId), Txn>,
     disputes: HashMap<(TxnId, ClientId), Txn>,

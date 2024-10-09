@@ -44,9 +44,13 @@ pub enum Account {
 
 #[derive(Debug, PartialEq, thiserror::Error)]
 pub enum Error {
+    #[error("Deserialization error in file {0}: `{1}`")]
+    Deserialization(String, String),
+    #[error("Serialization error: `{0}`")]
+    Serialization(String),
     #[error("Error in input data: `{0}`.")]
     Input(String),
-    #[error("Insufficient funds ({1}) referencing transaction {1}")]
+    #[error("Insufficient funds ({1}) referencing transaction {0}")]
     InsufficientFunds(TxnId, String),
     #[error("Invalid Transaction {0}: `{1}`")]
     InvalidTransaction(TxnId, String),

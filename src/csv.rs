@@ -1,3 +1,5 @@
+use std::io::Write;
+
 use serde::{Deserialize, Serialize};
 
 use crate::types::{Account, ClientId, Error, Txn, TxnId};
@@ -21,55 +23,55 @@ pub struct Output {
     pub locked: bool,
 }
 
-impl TryInto<Txn> for Input {
+impl TryFrom<Input> for Txn {
     type Error = Error;
 
-    fn try_into(self) -> Result<Txn, Self::Error> {
-        match self.tpe.as_str() {
-            "deposit" => match self.amount {
+    fn try_from(inp: Input) -> Result<Txn, Self::Error> {
+        match inp.tpe.as_str() {
+            "deposit" => match inp.amount {
                 Some(amt) => amt.try_into().map(|a| Txn::Deposit {
-                    client: self.client,
-                    tx: self.tx,
+                    client: inp.client,
+                    tx: inp.tx,
                     amount: a,
                 }),
                 None => Err(Error::Input(format!(
                     "Missing amount in transaction {}",
-                    self.tx
+                    inp.tx
                 ))),
             },
-            "withdrawal" => match self.amount {
+            "withdrawal" => match inp.amount {
                 Some(amt) => amt.try_into().map(|a| Txn::Withdrawal {
-                    client: self.client,
-                    tx: self.tx,
+                    client: inp.client,
+                    tx: inp.tx,
                     amount: a,
                 }),
                 None => Err(Error::Input(format!(
                     "Missing amount in transaction {}",
-                    self.tx
+                    inp.tx
                 ))),
             },
             "dispute" => Ok(Txn::Dispute {
-                client: self.client,
-                tx: self.tx,
+                client: inp.client,
+                tx: inp.tx,
             }),
             "resolve" => Ok(Txn::Resolve {
-                client: self.client,
-                tx: self.tx,
+                client: inp.client,
+                tx: inp.tx,
             }),
             "chargeback" => Ok(Txn::Chargeback {
-                client: self.client,
-                tx: self.tx,
+                client: inp.client,
+                tx: inp.tx,
             }),
             _ => Err(Error::Input(format!(
                 "Invalid transaction type in transaction {}",
-                self.tx
+                inp.tx
             ))),
         }
     }
 }
 
-impl From<Account> for Output {
-    fn from(val: Account) -> Self {
+impl From<&Account> for Output {
+    fn from(val: &Account) -> Self {
         match val {
             Account::Locked(a) => Output {
                 client: a.client,
@@ -89,6 +91,46 @@ impl From<Account> for Output {
     }
 }
 
+pub fn load(path: String) -> (Vec<Txn>, Vec<Error>) {
+    let mut txns: Vec<Txn> = Vec::new();
+    let mut errs: Vec<Error> = Vec::new();
+
+    match csv::ReaderBuilder::new()
+        .flexible(true)
+        .trim(csv::Trim::All)
+        .from_path(path.clone())
+    {
+        Ok(mut rdr) => {
+            let input = rdr.deserialize::<Input>();
+            for inp in input {
+                match inp {
+                    Ok(i) => match i.try_into() {
+                        Ok(txn) => txns.push(txn),
+                        Err(e) => errs.push(Error::Deserialization(path.clone(), e.to_string())),
+                    },
+                    Err(e) => errs.push(Error::Deserialization(path.clone(), e.to_string())),
+                }
+            }
+        }
+        Err(e) => errs.push(Error::Deserialization(path, e.to_string())),
+    }
+    (txns, errs)
+}
+
+pub fn save<'a, I: Iterator<Item = &'a Account>>(
+    writer: impl Write,
+    accts: I,
+) -> Result<(), Error> {
+    let out = accts.map(|a| -> Output { a.into() });
+    let mut wrt = csv::Writer::from_writer(writer);
+    for o in out {
+        if let Err(e) = wrt.serialize(o) {
+            return Err(Error::Serialization(e.to_string()));
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use std::io::BufWriter;
@@ -104,10 +146,13 @@ type,client,tx,amount
 deposit,1,2,3
 withdrawal,1,2,3.5
 dispute,1,2,
-resolve,1,2,
-chargeback,1,2,"#;
+resolve,1,2
+chargeback,1,2"#;
 
-        let mut rdr = csv::Reader::from_reader(csv_str.as_bytes());
+        let mut rdr = csv::ReaderBuilder::new()
+            .flexible(true)
+            .trim(csv::Trim::All)
+            .from_reader(csv_str.as_bytes());
         let actual: Vec<Txn> = rdr
             .deserialize::<Input>()
             .map(|x| x.unwrap().try_into().unwrap())
@@ -134,18 +179,18 @@ chargeback,1,2,"#;
     #[test]
     fn test_serialize_accounts() {
         let accts: Vec<Output> = vec![
-            Account::Unlocked(AccountData {
+            (&Account::Unlocked(AccountData {
                 client: 1,
                 available: 30000.into(),
                 held: 40000.into(),
-            })
-            .into(),
-            Account::Locked(AccountData {
+            }))
+                .into(),
+            (&Account::Locked(AccountData {
                 client: 2,
                 available: 31111.into(),
                 held: 42222.into(),
-            })
-            .into(),
+            }))
+                .into(),
         ];
 
         let buf = BufWriter::new(Vec::new());
